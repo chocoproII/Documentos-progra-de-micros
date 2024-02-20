@@ -1,0 +1,209 @@
+;******************************************************************************
+;Universidad del Valle de Guatemala
+;IE2023: Programación de Microcontroladores
+;Autor: Gabriel Sanchez
+;Proyecto: Laboratorio 03
+;Hardware: ATMEGA328P
+;Creado: 17/02/2024
+;Última modificación: 19/02/2024
+;******************************************************************************
+
+;******************************************************************************
+; ENCABEZADO
+;******************************************************************************
+
+.include "M328PDEF.inc"
+.cseg
+.org 0x0000
+	JMP SETUP
+.org 0x0006
+	JMP ISR_INT0
+.org 0x0020
+	JMP ISR_TIMER0_OVF
+
+;******************************************************************************
+; Configuración de la Pila
+;******************************************************************************
+SETUP:
+LDI R16, LOW(RAMEND)
+OUT SPL, R16
+LDI R17, HIGH(RAMEND)
+OUT SPH, R17
+
+;******************************************************************************
+; CONFIGURACIÓN
+;******************************************************************************
+
+;Se establecen los puertos D con la configuracion deseada
+;Se enciende en pull-up
+LDI		R16, 0xFF	
+OUT		DDRD, R16
+LDI		R16, 0x00
+OUT		PORTD, R16
+CALL	st_tm0
+
+;Se deshabilitan los puertos rx y tx
+LDI		R16, 0x00	
+STS		UCSR0B, R16		
+
+;Contador 1
+;Se crea el puntero en z para las secciones mas y menos significativas de la tabla de 7 segmentos
+LDI		ZH, HIGH(seg7 << 1)	
+LDI		ZL, LOW(seg7 << 1)	
+
+
+; Configurar puertos de salida para los transistores
+LDI		R16, (1 << DDB2) | (1 << DDB3)  ; Habilitar PB2 y PB3 del puerto B como salida
+OUT		DDRB, R16
+
+LDI		R16, (1 << PCINT0) | (1 << PCINT1)
+STS		PCMSK0, R16
+
+LDI		R16, (1 << PCIE0)
+STS		PCICR, R16
+SEI
+
+;Se habilitan 0 y 1 como puertos de entrada en pull-up
+CBI		DDRB, PB0		
+CBI		DDRB, PB1		
+SBI		PORTB, PB0		
+SBI		PORTB, PB1		
+LDI		R17, 0x00		
+	
+
+;Se habilitan 0,1,2,3 del puerto C como salidas
+SBI		DDRC, PC0		
+SBI		DDRC, PC1		
+SBI		DDRC, PC2		
+SBI		DDRC, PC3		
+	
+
+
+;******************************************************************************
+; MAIN
+;******************************************************************************
+seg7: .DB 0x3F,0x06,0x5B,0x4F,0x66,0x6D,0x7D,0x07,0x7F,0x6F
+
+Loop:
+	OUT		PORTC, R22
+
+;Seccion grafica de segundos
+	SBI		PORTB, PB2 
+	LDI		ZL, LOW(seg7 << 1)
+	ADD		ZL, R17
+	LPM		R18, Z
+	OUT		PORTD, R18
+
+	RCALL	Delay
+	CBI		PORTB, PB2
+
+	
+;Seccion grafica de decenas
+	SBI		PORTB, PB3
+	LDI		ZL, LOW(seg7 << 1)
+	ADD		ZL, R19
+	LPM		R21, Z
+	OUT		PORTD, R21
+
+	RCALL	Delay
+	CBI		PORTB, PB3
+
+	
+;Colocar aca todo lo demas del loop
+	CPI		R20, 100
+	BRNE	Loop
+	CLR		R20
+	INC		R17
+	CPI		R17, 0b0000_1010
+	BREQ	rst
+	RJMP	Loop	
+
+rst:
+	LDI		ZL, LOW(seg7 << 1)
+	LDI		R17, 0x00
+	INC		R19
+	CPI		R19, 0b0000_0110
+	BREQ	rst2
+	RJMP	Loop
+;La operacion de arriba se ve de la siguiente manera separando los pasos por comas
+; z1+R17, clear a z1, z1+R19, clear z1
+
+rst2:
+	LDI		R19, 0x00
+	RJMP	Loop
+
+FS1:
+	RET
+
+;******************************************************************************
+; Encender y establecer el Timer 0
+;******************************************************************************
+st_tm0: 
+	LDI		R16, (1 << CS02) | (1 << CS00) ;Configurar el prescaler a 1024 
+	OUT		TCCR0B, R16
+
+	LDI		R16, 99						;Cargar el valor de desbordamiento
+	OUT		TCNT0, R16					;Cargar el valor inicial del contador
+
+	LDI		R16, (1<<TOIE0)
+	STS		TIMSK0, R16	
+	RET
+
+;******************************************************************************
+; SUBRUTINAS
+;******************************************************************************
+ISR_INT0:
+	PUSH	R16
+	IN		R16, SREG
+	PUSH	R16
+
+	IN		R16, PINB
+
+	SBRC	R16, PB0
+	RJMP	menos
+	INC		R22
+	SBRC	R22, 4
+	CLR		R22
+	RJMP	brinco
+
+
+	menos:
+	SBRS	R16, PB1
+	DEC		R22
+	SBRC	R22, 4
+	LDI		R22, 0x0F
+	RJMP	brinco
+
+	brinco:
+	SBI		PCIFR, PCIF0
+	POP		R16
+	OUT		SREG, R16
+	POP		R16
+	RETI 
+
+
+
+;******************************************************************************
+; SUBRUTINA DE ISR TIMER 0 OVERFLOW
+;******************************************************************************
+ISR_TIMER0_OVF:
+	PUSH	R16
+	IN		R16, SREG
+	PUSH	R16
+
+	LDI		R16, 99
+	OUT		TCNT0, R16
+	SBI		TIFR0, TOV0
+	INC		R20
+
+	POP		R16
+	OUT		SREG, R16
+	POP		R16
+	RETI
+
+Delay:
+	LDI R16, 100
+	Delay_Espera:
+	DEC R16
+	BRNE Delay_Espera
+	RET
