@@ -1,0 +1,201 @@
+//******************************************************************************
+//Universidad del Valle de Guatemala
+//IE2023: Programación de Microcontroladores
+//Autor: Gabriel Sanchez
+//Proyecto: Laboratorio 04
+//Hardware: ATMEGA328P
+//Creado: 10/04/2024
+//Última modificación: 13/04/2024
+//******************************************************************************
+
+//Definicion de valores definidos
+#define BUTTON_SUM_PIN PC5
+#define BUTTON_DEC_PIN PC1
+//Seccion de rango de contador
+#define LED_PIN_START 0
+#define LED_PIN_END 7
+//Seccion de valores pin de tx y rx
+#define RX PD0
+#define TX PD1
+//Seccion de frecuencia de reloj
+#define F_CPU 16000000UL
+//Definicion de librerias
+#include <avr/io.h>
+#include <util/delay.h>
+//Definicion de prototipos de funcion
+void setup(void);
+void aumento(void);
+void decremento(void);
+void display(void);
+
+// Variables globales
+unsigned char contador = 0; // Contador binario de 8 bits (0-255)
+unsigned char pot_value = 0; //Contador binario de 8 bits sin signo
+
+//Seccion de valores para el display
+const unsigned char digitos[] = {
+	0b01011111, // 0
+	0b00000101, // 1
+	0b00111011, // 2
+	0b00101111, // 3
+	0b01100101, // 4
+	0b01101110, // 5
+	0b01111110, // 6
+	0b00000111, // 7
+	0b01111111, // 8
+	0b01101111, // 9
+	0b01110111,	//A
+	0b01111100,	//B
+	0b01011010,	//C
+	0b00111101,	//D
+	0b01111010,	//E
+	0b01110010	//F
+};
+
+//Seccion de encendido del ADC
+void ADC_init(void) {
+	ADMUX |= (1 << REFS0);
+	//Se enciende el ISR del ADC
+	ADCSRA |= (1<<ADIE);
+
+	//Se deja encendido el ADC
+	//Prescaler definido
+	ADCSRA |= (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
+}
+
+// Función para leer el valor del ADC
+uint16_t ADC_read(uint8_t adc_channel) {
+	// Limpiar los bits de selección de canal anterior
+	ADMUX &= 0xF0;
+	// Seleccionar el canal de ADC
+	ADMUX |= adc_channel;
+	// Iniciar la conversión
+	ADCSRA |= (1 << ADSC);
+	// Esperar hasta que la conversión esté completa
+	while (ADCSRA & (1 << ADSC));
+	// Devolver el valor del ADC
+	return ADC;
+}
+
+int main() {
+		setup();
+		ADC_init();
+	while (1) {
+		//Se lee el valor del potenciometro con el ADC
+		uint16_t pot_value = ADC_read(6);
+		PORTB |= (1 << PB1); // Seccion de encendido de contador
+		display();	
+		//Seccion de aumento de contador
+		if (!(PINC & (1 << BUTTON_SUM_PIN))){
+					aumento();
+					// Esperar 150ms
+					_delay_ms(150);
+		} 
+		else
+		{
+					// Esperar 1ms
+					_delay_ms(1);
+		}
+		//Seccion de decremento de contador
+		if (!(PINC & (1 << BUTTON_DEC_PIN))){
+					decremento();
+					// Esperar 150ms
+					_delay_ms(150);
+		}
+		else
+		{
+					// Esperar 1ms
+					_delay_ms(1);
+		}
+		PORTB &= ~(1 << PB1); // Seccion de apagado de contador
+		
+		 // Mostramos el valor hexadecimal en los displays de 7 segmentos
+		 PORTC |= (1 << PC4); // Seccion de encendido 
+		 PORTD = digitos[(pot_value >> 4) & 0x0F]; 
+		 _delay_ms(4);
+		 PORTC &= ~(1 << PC4); // Seccion de apagado
+		 PORTD = 0x00;
+		 _delay_ms(4);
+		 
+		 PORTC |= (1 << PC3); // Seccion de encendido
+		 PORTD = digitos[pot_value & 0x0F]; 
+		 _delay_ms(4);
+		 PORTC &= ~(1 << PC3); // Seccion de apagado
+		 PORTD = 0x00;
+		 _delay_ms(4);
+		 
+	 	 //Seccion de alarma
+	 	 if (pot_value>=contador)
+	 	 {
+		 	 PORTB |= (1 << PB0); // Encender el led alarma
+	 	 }
+	 	 else
+	 	 {
+		 	 PORTB &= ~(1 << PB0); // Apagar el led alarma
+	 	 }
+	 }	
+
+	return 0;
+}
+
+void setup(){
+	//Declaracion de puertos D para display
+	DDRD |= (1 << PD0);
+	DDRD |= (1 << PD1);
+	DDRD |= (1 << PD2);
+	DDRD |= (1 << PD3);
+	DDRD |= (1 << PD4);
+	DDRD |= (1 << PD5);
+	DDRD |= (1 << PD6);
+	DDRD |= (1 << PD7);
+	
+	//Declaracion de puertos C para display
+	DDRC |= (1 << PC3);
+	DDRC |= (1 << PC4);	
+	
+	//Declaracion de puertos B para display
+	DDRB |= (1 << PB1);
+	DDRB |= (1 << PB0);
+	
+	//Declaracion de puertos C para entrada de botones
+	DDRC &= ~(1 << PC5); // PC5 como entrada (botón de aumento)
+	PORTC |= (1 << PC5); // activar pull-up
+	DDRC &= ~(1 << PC1); // PC1 como entrada (botón de aumento)
+	PORTC |= (1 << PC1); // activar pull-up
+	
+	
+	// Deshabilitar la funcionalidad de RX y TX para UART
+	UCSR0B &= ~(1 << TXEN0);
+	UCSR0B &= ~(1 << RXEN0);
+	
+	// Configurar los pines RX y TX como pines de salida
+	DDRD |= (1 << TX);
+	DDRD |= (1 << RX);
+	PORTD &= ~(1 << TX);
+	PORTD &= ~(1 << RX);
+}
+
+void aumento() {
+	contador++;
+	if (contador > 255) {
+		contador = 0;
+	}
+}
+
+void decremento() {
+	if (contador == 0) {
+		contador = 255;
+		} else {
+		contador--;
+	}
+}
+
+void display() {
+	for (int i = LED_PIN_START; i <= LED_PIN_END; i++) {
+		if (contador & (1 << (i - LED_PIN_START))) {
+			PORTD |= (1 << i); // Encender LED
+			} else {
+			PORTD &= ~(1 << i); // Apagar LED
+		}
+	}
+}
