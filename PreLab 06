@@ -1,0 +1,66 @@
+//******************************************************************************
+//Universidad del Valle de Guatemala
+//IE2023: Programación de Microcontroladores
+//Autor: Gabriel Sanchez
+//Proyecto: Laboratorio 06
+//Hardware: ATMEGA328P
+//Creado: 21/04/2024
+//Última modificación: 22/04/2024
+//******************************************************************************
+
+#include <avr/io.h>
+#include <util/delay.h>
+
+//Definimos frecuencias y baud rates
+#define F_CPU 16000000UL
+#define BAUD 9600
+#define UBRR_VALUE F_CPU/16/BAUD - 1
+
+void UART_init(unsigned int ubrr) {
+	//Definimos a que velocidad queremos que transmita.
+	UBRR0H = (unsigned char)(ubrr >> 8);
+	UBRR0L = (unsigned char)ubrr;
+	//Encendemos el tx y el rx para que si emitan y reciban.
+	UCSR0B = (1 << TXEN0) | (1 << RXEN0);
+	//Decimos de cuantos bits es el dato y cuantos bits de parada.
+	//En este caso son 8 bits de dato y 1 que determina la parada
+	UCSR0C = (1 << UCSZ01) | (1 << UCSZ00); 
+}
+
+void UART_transmit(unsigned char data) {
+	//Leemos el buffer y hacemos que funcione cuando este vacia.
+	while (!(UCSR0A & (1 << UDRE0)));
+	//Cargar los datos que tenemos en el buffer.
+	UDR0 = data;
+}
+
+unsigned char UART_receive(void) {
+	//Se queda en espera de recibir un dato
+	while (!(UCSR0A & (1 << RXC0)));
+	//Devolver el dato
+	return UDR0;
+}
+
+int main(void) {
+	char mode;
+	//Ensi
+	// Inicializar UART con la velocidad de baudios 
+	UART_init(UBRR_VALUE);
+
+	// Configurar el puerto B como salida
+	DDRB = 0xFF;
+
+	//Establido el modo el que se establece.
+	mode = UART_receive();
+
+	if (mode == 'T') {
+		//Se tienen dos modos, uno sirve para dejar si es transmicion o recepcion
+		UART_transmit('H');
+		} else if (mode == 'R') {
+		//Con esto se lee y se interpreta en binario
+		char received_char = UART_receive();
+		PORTB = received_char;
+	}
+
+	return 0;
+}
